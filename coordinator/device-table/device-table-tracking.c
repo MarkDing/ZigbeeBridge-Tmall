@@ -139,7 +139,7 @@ EmberAfPluginDeviceTableDeviceState getCurrentState(EmberNodeId nodeId)
   return deviceTable[index].state;
 }
 
-uint16_t getCurrentDeviceId(EmberNodeId nodeId)
+uint16_t getLastDeviceId(EmberNodeId nodeId)
 {
   int found = 0;
   EmberAfPluginDeviceTableEntry *deviceTable = emberAfDeviceTablePointer();
