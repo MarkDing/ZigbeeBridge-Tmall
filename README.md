@@ -206,3 +206,100 @@ void emberAfMainInitCallback(void)
 
   在每个系统tick结尾处调用，用来查看串口是否有命令数据进来。超过4个字节就调用cmdHandler()来处理命令。
 
+## 3. 生成WiFi的网桥
+我们需要在network\app\example\linkkit_gateway\linkkit_example_gateway.c中做适当的修改来适应我们的完整功能需求。另外添加comm.c和comm.h来处理和Coordinator之间的通讯。
+阿里巴巴在三月份更新了设备管理的[API](https://help.aliyun.com/document_detail/97569.html)，原来旧有的接口例程放在了本目录的deprecated子目录下。 新的API接口还有些地方没有完善或者功能欠缺，给后期的开发带来不少麻烦，通过其他方式来做了补充。
+
+下面我们按照执行顺序和功能模块来进行介绍。
+
+### 3.1. 网桥设备注册登录阿里云
+网桥设备是一机一密的方式，没有采用动态登录方式。
+创建主设备，选择上海的云服务器，选择非动态登录方式，连接到阿里云
+
+```c
+/* Register Callback */
+IOT_RegisterCallback(ITE_TOPOLIST_REPLY, user_topolist_reply_event_handler);
+IOT_RegisterCallback(ITE_INITIALIZE_COMPLETED, user_initialized);
+
+/* Create Master Device Resources */
+user_example_ctx->master_devid = IOT_Linkkit_Open(IOTX_LINKKIT_DEV_TYPE_MASTER, &master_meta_info);
+
+/* Choose Login Server */
+int domain_type = IOTX_CLOUD_REGION_SHANGHAI;
+IOT_Ioctl(IOTX_IOCTL_SET_DOMAIN, (void *)&domain_type);
+
+/* Choose Login Method */
+int dynamic_register = 0;
+IOT_Ioctl(IOTX_IOCTL_SET_DYNAMIC_REGISTER, (void *)&dynamic_register);
+
+/* Start Connect Aliyun Server */
+res = IOT_Linkkit_Connect(user_example_ctx->master_devid);
+```
+
+### 3.2. 获取网桥子设备拓扑关系
+在网桥设备连云初始化完成后，会调用ITE_INITIALIZE_COMPLETED对应的回调函数user_initialized()。然后可以用ITM_MSG_QUERY_TOPOLIST选项来调用IOT_Linkkit_Query以获取与其存在拓扑关系的所有子设备信息. 列表信息将在ITE_TOPOLIST_REPLY事件回调中返回。
+
+```c
+res = IOT_Linkkit_Query(user_example_ctx->master_devid, ITM_MSG_QUERY_TOPOLIST,NULL, 0);
+```
+
+数据为JSON格式,如下两个设备范例
+
+```json
+{"id":2,"code":200,"devid":0,
+"topo":[{"deviceSecret":"ZI0OtnNGd4fFExOerguZRH0huyiUcDrW","productKey":"a1dOIDDEMGM","deviceName":"000b57fffe648d84"},
+{"deviceSecret":"OODoAak2RWyHHxftQWbMhDEuQvtvzdJk","productKey":"a1dOIDDEMGM","deviceName":"000b57fffe648dc2"}]}
+```
+
+将接收到的子设备信息进行解析，调用device_table_add_subdev()添加到本地设备列表方面以后操作管理。
+
+### 3.3. 子设备的登入和登出
+在创建完本地的设备列表后，通过device_get_property()和Zigbee的Coordinator进行通讯查看相应的子设备是否在线。
+命令格式 为 packet_len, ~packet_len, {"cmd":CMD_GET_PROPERTY,"dn":"000b57fffe648dc2"}
+
+Coordinator收到命令后会汇报子设备的状态。响应包格式，packet_len, ~packet_len, {"dn":"000b57fffe648dc2","cmd":RSP_DEV_PROPERTY, "online":online}. 根据返回的online的值来向阿里云汇报子设备的登入和登场状态。
+
+```c
+if (online) {
+    res = IOT_Linkkit_Report(devid, ITM_MSG_LOGIN, NULL, 0);    
+} else {
+    res = IOT_Linkkit_Report(devid, ITM_MSG_LOGOUT, NULL, 0);    
+}
+```
+
+### 3.4. 子设备的添加与删除
+当有新的子设备加入，Coordinator会向网桥汇报RSP_DEV_ADDED。命令中包含"model",表示是什么设备。 目前我们只支持两种设备，    DEVICE_ID_DIMMABLE_LIGHT和DEVICE_ID_COLOR_DIMMABLE_LIGHT。其他的model我们会不处理。
+准备好子设备的meta三元组数据，创建子设备，连接阿里云，更新本地设备列表，子设备登入。
+
+```c
+devid = IOT_Linkkit_Open(IOTX_LINKKIT_DEV_TYPE_SLAVE, meta_info);
+res = IOT_Linkkit_Connect(devid);
+device_table_add_subdev(meta_info, devid);
+res = IOT_Linkkit_Report(devid, ITM_MSG_LOGIN, NULL, 0);
+```
+
+删除子设备时，Coordinator向网桥汇报RSP_DEV_REMOVED。
+登出子设备，汇报阿里云删除拓扑关系，关闭子设备，更新本地设备列表
+
+```c
+res = IOT_Linkkit_Report(devid, ITM_MSG_LOGOUT, NULL, 0);   
+res = IOT_Linkkit_Report(devid, ITM_MSG_DELETE_TOPO, NULL, 0);
+res = IOT_Linkkit_Close(devid);
+res = device_table_del_subdev(devid);
+```
+
+### 3.5. 子设备灯的开关控制
+云端发送过来设备控制命令会触发ITE_PROPERTY_SET注册的回调函数。命令以JSON形式，如{"LightSwitch":1}。 我们对云端发送过来的命令不做任何修改，跟随设备信息直接发送给coordinator。格式如下{"cmd":67,"dn":"000b57fffe648dc2","pk":"a1dOIDDEMGM","payload":{"LightSwitch":1}}。这样做有利于以后支持新设备，不用修改网桥控制部分代码。
+然后向阿里云汇报子设备开关状态，这里直接假设控制成功，如果子设备因为离线没能控制，会在RSP_DEV_PROPERTY中处理正确的状态。 
+
+```c
+res = IOT_Linkkit_Report(devid, ITM_MSG_POST_PROPERTY, (uint8_t *)request, request_len);
+```
+
+
+## 4. 天猫精灵控制设备灯的开关
+在云智能App选择第三方服务，选中天猫精灵，设置好用户名和密码。在天猫精灵App里发现新添加的设备，起好名字。
+对天猫精灵说"打开书房的灯", 灯开; "关闭书房的灯", 灯灭; "现在灯是开的么?", 回答"现在灯处于关闭状态"
+
+至此我们实现了天猫精灵以云对云的方式来控制Zigbee设备。
+
