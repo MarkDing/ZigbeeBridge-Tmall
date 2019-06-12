@@ -14,12 +14,12 @@ Zigbee协议中Coordinator作为控制中心可以创建Mesh网络，管理子�
 ### 2.1.  生成一个blank project
 A) 在SS里点击"New Project"， 选择"ZCL Application Framework V2"，再选"EmberZNet 6.5.5.0 GA SoC 6.5.5.0"，然后勾选"Start with a blank application"，按Next
 
-![Blankprj](images/blankprj.png)
+![Blankprj](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/blankprj.png)
 
 项目名起为Coordinator，按Next再Finish就生成了一个空的项目工程。
 我们会看到项目里只有一个Coordinator.isc的文件，这个是用来配置Zigbee相关的参数，并根据配置自动生成源代码。
 
-![isc](images/isc.png)
+![isc](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/isc.png)
 
 如图可以看到许多Tab用来配置不同的参数。
 
@@ -27,11 +27,11 @@ B) 选ZCL global tab，在Manufacturer code输入Ember [0x1002]
 
 C) 选ZCL Clusters， 选择 ZCL device type为"ZigBee Custom->HA Home Gateway / Energy Management"。
 
-![zcldevtype](images/zcldevtype.png)	
+![zcldevtype](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/zcldevtype.png)	
 
 选General->Basic->On/off, 使能Client
 
-![onoffclient](images/onoffclient.png)
+![onoffclient](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/onoffclient.png)
 
 D) 选Plugins tab，使能
 * Network Creator
@@ -58,11 +58,11 @@ F) 选Callbacks tab, 使能如下Callback函数
 
 G) 选Includes tab，在Custom Event列表中添加commisioning, led, subdevState event controls
 
-![customevent](images/customevent.png)
+![customevent](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/customevent.png)
 
 H) 打开项目属性， 将C Library中Print float和Scanf float勾选上，这样处理以后的JSON浮点数就没有问题了
 
-![printfloat](images/printfloat.png)
+![printfloat](https://raw.github.com/MarkDing/ZigbeeBridge-Tmall/master/images/printfloat.png)
 	
 I) 在Coordinator.isc右上角点击Generate按钮生成源代码
 
